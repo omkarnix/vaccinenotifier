@@ -5,24 +5,27 @@ const axios = require('axios');
 const notifier = require('./notifier');
 var pm2 = require('pm2');
 /**
-Step 1) Enable application access on your gmail with steps given here:
-https://support.google.com/accounts/answer/185833?hl=en
+ Step 1) Enable application access on your gmail with steps given here:
+ https://support.google.com/accounts/answer/185833?hl=en
 
-Step 2) Enter the details in the file .env, present in the same folder
+ Step 2) Enter the details in the file .env, present in the same folder
 
-Step 3) On your terminal run: npm i && pm2 start vaccineNotifier.js
+ Step 3) On your terminal run: npm i && pm2 start vaccineNotifier.js
 
-To close the app, run: pm2 stop vaccineNotifier.js && pm2 delete vaccineNotifier.js
+ To close the app, run: pm2 stop vaccineNotifier.js && pm2 delete vaccineNotifier.js
  */
 
 const PINCODE = process.env.PINCODE
-const EMAIL = process.env.EMAIL
 const AGE = process.env.AGE
+const FROM_DAY = process.env.FROM_DAY
+const TO_DAY = process.env.TO_DAY
+const cronExpression = process.env.CRON
 count=0;
 
 async function main(){
     try {
-       var task = cron.schedule('* * * * *', async () => {
+        console.log('Environment variables = ', process.env)
+        var task = cron.schedule(cronExpression, async () => {
             await checkCount(count);
             await checkAvailability();
         });
@@ -34,7 +37,7 @@ async function main(){
 
 async function checkAvailability() {
 
-    let datesArray = await fetchNext10Days();
+    let datesArray = await fetchNextNDays();
     datesArray.forEach(date => {
         getSlotsForDate(date);
     })
@@ -50,15 +53,14 @@ function getSlotsForDate(DATE) {
                 'accept': 'application/json',
                 'Accept-Language': 'hi_IN'
             }
-        };  
+        };
         axios(config)
             .then(function (slots) {
                 let sessions = slots.data.sessions;
                 let validSlots = sessions.filter(slot => slot.min_age_limit <= AGE &&  slot.available_capacity > 0)
-                console.log({date:DATE, validSlots: validSlots.length})
                 if(validSlots.length > 0) {
+                    console.log('slot found!!', JSON.stringify(validSlots))
                     notifyMe(validSlots,DATE);
-                    count++;
                 }
             })
             .catch(function (error) {
@@ -71,17 +73,17 @@ async function
 
 notifyMe(validSlots,date){
     let slotDetails = JSON.stringify(validSlots, null, '\t');
-    notifier.sendEmail(EMAIL, 'VACCINE AVAILABILITY '+date, validSlots, (err, result) => {
+    notifier.sendEmail('VACCINE AVAILABILITY '+date, validSlots, (err, result) => {
         if(err) {
             console.error({err});
         }
     })
 };
 
-async function fetchNext10Days(){
+async function fetchNextNDays(){
     let dates = [];
     let today = moment();
-    for(let i = 0 ; i < 10 ; i ++ ){
+    for(let i = FROM_DAY ; i < TO_DAY ; i ++ ){
         let dateString = today.format('DD-MM-YYYY')
         dates.push(dateString);
         today.add(1, 'day');
@@ -95,7 +97,7 @@ async function checkCount(countt){
         pm2.delete('vaccineNotifier.js', function (err, proc) {
             pm2.disconnect(); // Disconnects from PM2
             if (err) {
-              throw err;
+                throw err;
             }
         });
     }
